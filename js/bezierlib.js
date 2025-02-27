@@ -58,11 +58,10 @@ export function estimateLength(p1, h1, h2, p2, iterationCount = 50){
  * @param {number} iterationCount - How many steps along the bezier to check
  * @returns {number} Curvature, take `1/curvature` to get radius.
  */
-export function estimateCurvature(p1, h1, h2, p2, iterationCount = 50){
-    let curvature = 0;
+export function estimateCurvatures(p1, h1, h2, p2, iterationCount = 50){
+    let curvatures = [];
     let t = 0;
     let vel = {};
-    let totalCount = 0;
     for(let i=0; i<iterationCount; i++){
         t = i/iterationCount;
         vel = evaluateVelocity(p1, h1, h2, p2, t);
@@ -70,13 +69,13 @@ export function estimateCurvature(p1, h1, h2, p2, iterationCount = 50){
             Vector.length(Vector.cross(vel, evaluateAcceleration(p1, h1, h2, p2, t)))
             /Math.pow(Vector.length(vel),3);
         if(!Number.isNaN(newCurvature)){
-            curvature += newCurvature;
-            totalCount++;
+            curvatures.push(newCurvature);
         }
     }
-    if(!curvature) return 0.00000001;
-    return curvature/totalCount;
+    return curvatures;
 }
+
+
 
 /** Evaluate the bezier at `t`, getting position.
  * @param {Vector} p1 - Start

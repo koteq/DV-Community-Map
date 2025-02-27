@@ -5,8 +5,10 @@ import * as Bezier from './js/bezierlib.js';
 import * as Utils from './js/utillib.js';
 import {Color} from './js/colorlib.js';
 import * as Config from './config.js';
+import {Bezier as BezierJs} from './js/bezier.js';
 
 // CONFIG
+const meanSeaLevel = 110;
 const bezierGradeResolution = 80;
 const bezierLengthResolution = 80;
 const bezierCurvatureResolution = 80;
@@ -90,6 +92,7 @@ let previousMapScale = -1;
 let MapMatrix = {};
 
 document.addEventListener('DOMContentLoaded', async () => {
+    //await loadTrackData('map_dump.json');
     await loadTrackData('trackdata_dv.json');
     await loadPoiData('poi_dv.json');
     mapNavigationSetup();
@@ -158,6 +161,7 @@ function mapNavigationSetup(){
         if(touchCount == 1){
             mapNav.x += e.clientX - touchCache[e.pointerId].x;
             mapNav.y += e.clientY - touchCache[e.pointerId].y;
+            sessionStorage.setItem("mapNav", JSON.stringify(mapNav));
         }else if(touchCount == 2){
             getTouchAverage();
             zoomAtPosition(touchCenter_x, touchCenter_y, (previousScale * getTouchDistance()/pinchDistance)/mapNav.scale);
@@ -240,6 +244,7 @@ function mapNavigationSetup(){
         mapNav.x = zoomCursorLocal_x - scaleFactor * (zoomCursorLocal_x-mapNav.x);
         mapNav.y = zoomCursorLocal_y - scaleFactor * (zoomCursorLocal_y-mapNav.y);
         mapNav.scale *= scaleFactor;
+        sessionStorage.setItem("mapNav", JSON.stringify(mapNav));
     }
 	
     map_container.addEventListener('pointerdown', touchDownHandler);
@@ -294,12 +299,12 @@ function establishDimensions(){
     let maxAlt = -Infinity;
     for(const obj of mapData){
         for(const point of obj.points){
-            minX = Math.min(minX, point.position.x, point.h1.x, point.h2.x);
-            minY = Math.min(minY, point.position.z, point.h1.z, point.h2.z);
-            minAlt = Math.min(minAlt, point.position.y, point.h1.y, point.h2.y);
-            maxX = Math.max(maxX, point.position.x, point.h1.x, point.h2.x);
-            maxY = Math.max(maxY, point.position.z, point.h1.z, point.h2.z);
-            maxAlt = Math.max(maxAlt, point.position.y, point.h1.y, point.h2.y);
+            minX = Math.min(minX, point.position.x);
+            minY = Math.min(minY, point.position.z);
+            minAlt = Math.min(minAlt, point.position.y - meanSeaLevel);
+            maxX = Math.max(maxX, point.position.x);
+            maxY = Math.max(maxY, point.position.z);
+            maxAlt = Math.max(maxAlt, point.position.y - meanSeaLevel);
         }
     }
     let width = maxX-minX;
@@ -324,7 +329,8 @@ function establishDimensions(){
     mapNav = {
         x: isLandscape ? -map.clientWidth/2*baseScale + map_container.clientWidth/2 : 0,
         y: isLandscape ? 0 : -map.clientHeight/2*baseScale + map_container.clientHeight/2,
-        scale: baseScale
+        scale: baseScale,
+        ...(JSON.parse(sessionStorage.getItem("mapNav") ?? "{}"))
     };
     updateMapview();
     console.log(`(${minX}, ${minY}) to (${maxX}, ${maxY}). Altitude from ${minAlt} to ${maxAlt}`);
@@ -380,6 +386,42 @@ function drawTracks(bezierData){
         bezierData.isPoint = true;
     }
     bezierData.randomColor = Color.random();
+
+    // for(let i=0; i<bezierData.arcs.length; i++){
+    //     const arc = bezierData.arcs[i];
+    //     // arc
+    //     function polarToCartesian(centerX, centerY, radius, angleInRadians) {
+    //         //const angleInRadians = (angleInDegrees - 90) * Math.PI / 180.0;
+    //         return {
+    //             x: Math.cos(angleInRadians) * radius + centerX,
+    //             y: Math.sin(angleInRadians) * radius + centerY,
+    //         };
+    //     }
+    //     const s = polarToCartesian(arc.center.x, -arc.center.z - 10832.6, arc.r, -arc.s);
+    //     const e = polarToCartesian(arc.center.x, -arc.center.z - 10832.6, arc.r, -arc.e);
+    //     let genPath = '';
+    //     genPath += `M ${s.x} ${s.y} `;
+    //     genPath += `A ${arc.r} ${arc.r} 0 0 0 ${e.x} ${e.y} `;
+    //     // A rx ry x-axis-rotation large-arc-flag sweep-flag x y
+    //     bezierData.arcs[i].element = document.createElementNS(svgns, 'path');
+    //     bezierData.arcs[i].element.setAttribute('d', genPath);
+    //     bezierData.arcs[i].element.classList.add('rail');
+    //     tracks.push([(s.y+e.y)*0.5, bezierData.arcs[i].element]);
+
+    //     let title = document.createElementNS(svgns, 'title');
+    //     title.innerHTML = [
+    //         `"${bezierData.name}"${trackNameCounting[bezierData.name] > 0 ? ' #'+trackNameCounting[bezierData.name] : ''} Sec${i}`,
+    //         `Max Grade: ?`,
+    //         `Min Radius: ${Math.round(arc.r)}`,
+    //         `Top Speed: ${Utils.radiusToSpeed(arc.r)}`,
+    //         `Length: ${Math.round(arc.l)} meters`,
+    //         `Altitude: ?`,
+    //         ].join('\n');
+    //     bezierData.arcs[i].element.appendChild(title);
+    //     bezierData.arcs[i].postedSpeed = Utils.radiusToSpeed(arc.r);
+    //     bezierData.arcs[i].randomColor = Color.random();
+    // }
+
     for(let i=0; i+1<bezierData.points.length; i++){
         const bezStart = bezierData.points[i].position;
         const bezHandle1 = bezierData.points[i].h2;
@@ -391,9 +433,85 @@ function drawTracks(bezierData){
         genPath += `C ${bezHandle1.x} ${bezHandle1.z} ${bezHandle2.x} ${bezHandle2.z} ${bezEnd.x} ${bezEnd.z} `;
         bezierData.points[i].grade = Bezier.estimateGrade(bezStart, bezHandle1, bezHandle2, bezEnd, bezierGradeResolution);
         bezierData.points[i].gradeClass = Utils.gradeToClass(bezierData.points[i].grade);
+        const bezLength = Bezier.estimateLength(bezStart, bezHandle1, bezHandle2, bezEnd, bezierLengthResolution);
+        
+        //if (Math.abs(bezStart.x - 2767.689) < 0.1) debugger; 
+        // let minRadius3 = +Infinity;
+        // let arcPos = 0;
+        // for (const arc of bezierData.arcs) {
+        //     if (
+        //         (arcPos + arc.l >= bezPos && arcPos + arc.l <= bezPos + bezLength) ||
+        //         (arcPos >= bezPos && arcPos <= bezPos + bezLength) ||
+        //         (arcPos > bezPos && arcPos + arc.l < bezPos + bezLength)
+        //     ) {
+        //         minRadius3 = Math.min(minRadius3, arc.r);
+        //     }
+        //     arcPos += arc.l;
+        // }
+        // bezPos += bezLength;
+
         bezierData.points[i].bezLength = Bezier.estimateLength(bezStart, bezHandle1, bezHandle2, bezEnd, bezierLengthResolution);
-        bezierData.points[i].curvature = Bezier.estimateCurvature(bezStart, bezHandle1, bezHandle2, bezEnd, bezierCurvatureResolution);
-        bezierData.points[i].postedSpeed = Utils.radiusToSpeed(1/bezierData.points[i].curvature);
+        
+        // const curve = new BezierJs(
+        //     { x: bezStart.x, y: -bezStart.z },
+        //     { x: bezHandle1.x, y: -bezHandle1.z },
+        //     { x: bezHandle2.x, y: -bezHandle2.z },
+        //     { x: bezEnd.x, y: -bezEnd.z }
+        //   );
+        // const errorThreshold = 1.0;
+        // const arcs = curve.arcs(errorThreshold);
+        // const minRadius2 = Math.min(...arcs.map(a => a.r));
+
+        const resolutionPerMeter = 1;
+        const curvatureResolution = Math.round(Math.max(1, bezierData.points[i].bezLength * resolutionPerMeter));
+        const curvatures = Bezier.estimateCurvatures(bezStart, bezHandle1, bezHandle2, bezEnd, curvatureResolution);
+
+        //
+        const safeForce = 1.65; // N
+        const derailForce = 2.75; // N
+        const sensorMass = 1.0; // kg
+        // F = m * v^2 / r
+        // F * r = m * v^2
+        // v = sqrt(F * r / m)
+        function getSafeSpeed(curvature) {
+            return Math.sqrt(safeForce * (1/curvature) / sensorMass) * 3.6;
+        }
+        function getDerailSpeed(curvature) {
+            return Math.sqrt(derailForce * (1/curvature) / sensorMass) * 3.6;
+        }
+        function movingAverage(data, windowSize) {
+            const result = [];
+
+            for (let i = 0; i <= data.length - windowSize; i++) {
+                let window = data.slice(i, i + windowSize);
+                let average = window.reduce((val, acc) => val + acc, 0) / windowSize;
+                result.push(average);
+            }
+
+            return result;
+        }
+
+        const maxCurvature = Math.max(...curvatures);
+        const minDerailSpeed = getDerailSpeed(maxCurvature);
+
+        const smaWindowInSeconds = 1;
+        const smaWindowResolution = resolutionPerMeter * minDerailSpeed / 3.6 * smaWindowInSeconds;
+        const smaCurvatures = movingAverage(curvatures, smaWindowResolution);
+
+        // if (`"${bezierData.name}"${trackNameCounting[bezierData.name] > 0 ? ' #'+trackNameCounting[bezierData.name] : ''} Sec${i}`
+        //   === '"Road 10" Sec7') debugger; // HB curve -- '"[#] Road 35" #1 Sec0'
+
+        const avgCurvature = curvatures.reduce((s, a) => s + a, 0) / curvatures.length;
+        const smaMaxCurvature = smaCurvatures.length ? Math.max(...smaCurvatures) : maxCurvature;
+
+        const legasySpeed = Utils.radiusToSpeed(1/avgCurvature);
+        const avgSafeSpeed = getSafeSpeed(avgCurvature);
+        const smaSafeSpeed = getSafeSpeed(smaMaxCurvature);
+        const smaDerailSpeed = getDerailSpeed(smaMaxCurvature);
+        
+        // const newS = Utils.radiusToSpeed(minRadius2);
+        // const newS3 = Utils.radiusToSpeed(minRadius3);
+        bezierData.points[i].postedSpeed = legasySpeed;
         if(bezierData.isYard || bezierData.isTurntable) bezierData.points[i].postedSpeed = Math.min(bezierData.points[i].postedSpeed, 50);
         bezierData.points[i].element.setAttribute('d', genPath);
 
@@ -415,10 +533,14 @@ function drawTracks(bezierData){
         title.innerHTML = [
             `"${bezierData.name}"${trackNameCounting[bezierData.name] > 0 ? ' #'+trackNameCounting[bezierData.name] : ''} Sec${i}`,
             `Max Grade: ${Math.round(bezierData.points[i].grade*1000)/10}%`,
-            `Min Radius: ${Math.round(1/bezierData.points[i].curvature)} meters`,
-            `Top Speed: ${Utils.radiusToSpeed(1/bezierData.points[i].curvature)} km/h`,
+            //`Radius: avg ${Math.round(1/bezierData.points[i].curvature.avg)}, sma ${Math.round(1/bezierData.points[i].curvature.smaMax)}, min ${Math.round(1/bezierData.points[i].curvature.max)}`,
+            `Top Speed (legasy): ${legasySpeed}`,
+            `Top Speed (1.65N, segment avearege): ${avgSafeSpeed.toLocaleString(undefined, {maximumFractionDigits:1})}`,
+            `Top Speed (1.65N, moving avearege): ${smaSafeSpeed.toLocaleString(undefined, {maximumFractionDigits:1})}`,
+            `Top Speed (2.75N, at tightest point): ${minDerailSpeed.toLocaleString(undefined, {maximumFractionDigits:1})}`,
+            `Derail Speed (2.75N, moving avearege): ${smaDerailSpeed.toLocaleString(undefined, {maximumFractionDigits:1})}`,
             `Length: ${Math.round(bezierData.points[i].bezLength*10)/10} meters`,
-            `Altitude: ${Math.round((bezStart.y+bezEnd.y)*0.5)} meters`,
+            `Altitude: ${Math.round((bezStart.y+bezEnd.y)*0.5)-meanSeaLevel} meters`,
             ].join('\n');
         bezierData.points[i].element.appendChild(title);
     }
@@ -610,7 +732,7 @@ export function setTrackColorMode(mode){
             break;
         case 'Altitude':
             modeFunction = section => {
-                section.element.setAttribute('stroke', Color.blendGradient(Config.altitudeGradient, (section.position.y-MapMatrix.minAlt)/(MapMatrix.maxAlt-MapMatrix.minAlt)).hex);
+                section.element.setAttribute('stroke', Color.blendGradient(Config.altitudeGradient, (section.position.y-meanSeaLevel-MapMatrix.minAlt)/(MapMatrix.maxAlt-MapMatrix.minAlt)).hex);
             }
             gradientString = 'linear-gradient(to right';
             for(let col of Config.altitudeGradient) gradientString += ', '+col.hex;
@@ -660,6 +782,10 @@ export function setTrackColorMode(mode){
     }
     if(modeFunction != null){
         for(let curve of mapData){
+            // for(let section of curve.arcs){
+            //     if(!section.element) continue;
+            //     modeFunction(section, curve);
+            // }
             for(let section of curve.points){
                 if(!section.element) continue;
                 modeFunction(section, curve);

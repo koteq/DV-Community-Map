@@ -60,7 +60,23 @@ namespace CommunityMapTool {
                     sb.Append($"\"type\":\"{point.handleStyle}\"");
                     sb.Append(i + 1 < railTrack.curve.pointCount ? "}," : "}");
                 }
+                sb.Append("\n\t],");
+
+                float errorThreshold = 1f;
+                List<BezierArcApproximation.Arc> arcs = new List<BezierArcApproximation.Arc>();
+                BezierArcApproximation.CalculateArcs(railTrack.curve, errorThreshold, arcs);
+                sb.Append("\n\t\"arcs\":[");
+                for(int i = 0; i < arcs.Count; i++) {
+                    sb.Append("\n\t\t{");
+                    sb.Append($"\"center\":{{\"x\":{arcs[i].center.x},\"y\":{arcs[i].center.y},\"z\":{arcs[i].center.z}}}, ");
+                    sb.Append($"\"s\":{arcs[i].s}, ");
+                    sb.Append($"\"e\":{arcs[i].e}, ");
+                    sb.Append($"\"r\":{arcs[i].r}, ");
+                    sb.Append($"\"l\":{arcs[i].Length}");
+                    sb.Append(i + 1 < arcs.Count ? "}," : "}");
+                }
                 sb.Append("\n\t]\n}");
+
                 records.Add(sb.ToString());
             }
             File.WriteAllText(trackOutputPath, "[" + string.Join(",", records.ToArray()) + "\n]");
